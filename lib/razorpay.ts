@@ -1,37 +1,26 @@
-const RZP_BASE = "https://api.razorpay.com/v1";
+import type { Secrets } from "@/lib/runtimeConfig";
 
-function basicAuth() {
-  const id = process.env.RAZORPAY_KEY_ID!;
-  const secret = process.env.RAZORPAY_KEY_SECRET!;
-  const token = Buffer.from(`${id}:${secret}`).toString("base64");
-  return `Basic ${token}`;
-}
-
-export async function createPaymentLink(params: {
+export async function createPaymentLink({
+  cfg, amount, description, notes,
+}: {
+  cfg: Secrets;
   amount: number;
-  currency?: string;
   description?: string;
-  reference_id?: string;
-  customer?: { name?: string; email?: string; contact?: string };
-  expire_by?: number;
   notes?: Record<string, string>;
 }) {
-  const res = await fetch(`${RZP_BASE}/payment_links`, {
+  if (!cfg.RAZORPAY_KEY_ID || !cfg.RAZORPAY_KEY_SECRET) throw new Error("Razorpay credentials not configured");
+  const basic = Buffer.from(`${cfg.RAZORPAY_KEY_ID}:${cfg.RAZORPAY_KEY_SECRET}`).toString("base64");
+  const res = await fetch("https://api.razorpay.com/v1/payment_links", {
     method: "POST",
-    headers: {
-      "Authorization": basicAuth(),
-      "Content-Type": "application/json"
-    },
+    headers: { Authorization: `Basic ${basic}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      currency: "INR",
-      notify: { sms: true, email: true },
-      callback_method: "get",
-      ...params
-    })
+      amount, currency: "INR",
+      description: description || "Payment",
+      notes: notes || {},
+      remind_enable: true,
+    }),
   });
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`Razorpay create link failed: ${res.status} ${t}`);
-  }
-  return res.json();
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j?.error?.description || `Razorpay error: ${res.status}`);
+  return j;
 }

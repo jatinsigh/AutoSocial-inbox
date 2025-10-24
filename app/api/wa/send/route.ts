@@ -7,7 +7,7 @@ export async function POST(req: Request) {
   const body = await req.json();
 
   const { to, kind, text, template } = body;
-  console.log("WA WEBHOOK >", JSON.stringify(body, null, 2)); // ✅ add this
+  console.log("WA WEBHOOK >", JSON.stringify(body, null, 2)); 
   if (!to) return new Response(JSON.stringify({ error: "Missing 'to'" }), { status: 400 });
 
   try {
@@ -18,9 +18,11 @@ export async function POST(req: Request) {
     } else {
       result = await sendText({ to, text: text || "Hello!" });
     }
+    console.log("result >", JSON.stringify(result, null, 2)); 
     const id = result?.messages?.[0]?.id;
     return new Response(JSON.stringify({ id, result }), { status: 200 });
   } catch (e: any) {
+    console.log("WA SEND ERROR >", e.message);
     return new Response(JSON.stringify({ error: e.message }), { status: 500 });
   }
 }

@@ -1,45 +1,34 @@
-export type WASendText = {
-  to: string;
-  text: string;
-};
+import type { Secrets } from "@/lib/runtimeConfig";
 
-export type WASendTemplate = {
-  to: string;
-  template: {
-    name: string;
-    language: { code: string };
-    components?: any[];
-  };
-};
-
-const GRAPH_VERSION = process.env.GRAPH_VERSION || "v20.0";
-const WA_TOKEN = process.env.WA_TOKEN!;
-const WA_PHONE_ID = process.env.WA_PHONE_ID!;
-
-async function postWA(body: any) {
-  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${WA_PHONE_ID}/messages`;
+export async function sendText({to, text }: {to: string; text: string }) {
+  if (!process.env.WA_TOKEN || !process.env.WA_PHONE_ID) throw new Error("WhatsApp credentials not configured");
+  const url = `https://graph.facebook.com/${process.env.GRAPH_VERSION}/${process.env.WA_PHONE_ID}/messages`;
   const res = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${WA_TOKEN}`
-    },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      ...body
-    })
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.WA_TOKEN}` },
+    body: JSON.stringify({ messaging_product: "whatsapp", to, type: "text", text: { body: text } }),
   });
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`WA send failed: ${res.status} ${t}`);
-  }
-  return res.json();
+  const j = await res.json().catch(() => ({}));
+
+  console.log("J >", JSON.stringify(j, null, 2));
+  if (!res.ok) throw new Error(j?.error?.message || `WA send failed: ${res.status}`);
+  return j;
 }
 
-export async function sendText({ to, text }: WASendText) {
-  return postWA({ to, type: "text", text: { body: text } });
-}
-
-export async function sendTemplate({ to, template }: WASendTemplate) {
-  return postWA({ to, type: "template", template });
+export async function sendTemplate({
+  to, template,
+}: {
+  to: string;
+  template: { name: string; language: { code: string }; components?: any[] };
+}) {
+  if (!process.env.WA_TOKEN || !process.env.WA_PHONE_ID) throw new Error("WhatsApp credentials not configured");
+  const url = `https://graph.facebook.com/${process.env.GRAPH_VERSION}/${process.env.WA_PHONE_ID}/messages`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.WA_TOKEN}` },
+    body: JSON.stringify({ messaging_product: "whatsapp", to, type: "template", template }),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j?.error?.message || `WA template failed: ${res.status}`);
+  return j;
 }
