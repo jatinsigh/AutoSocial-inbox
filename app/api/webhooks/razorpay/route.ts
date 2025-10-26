@@ -2,16 +2,15 @@ import crypto from "crypto";
 import { readRawBody } from "@/lib/rawBody";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendText } from "@/lib/wa"; 
-import { getSecrets } from "@/lib/runtimeConfig";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   const raw = await readRawBody(req);
-    const { RAZORPAY_WEBHOOK_SECRET } = await getSecrets();
-  if (!RAZORPAY_WEBHOOK_SECRET) return new Response("no secret", { status: 400 });
-
+    // const { RAZORPAY_WEBHOOK_SECRET } = await getSecrets();
+  // if (!RAZORPAY_WEBHOOK_SECRET) return new Response("no secret", { status: 400 });
+  const RAZORPAY_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET || "";
   const signature = req.headers.get("x-razorpay-signature") || "";
   const expected = crypto.createHmac("sha256", RAZORPAY_WEBHOOK_SECRET).update(raw).digest("hex");
   if (signature !== expected) return new Response("bad sig", { status: 400 });

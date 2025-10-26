@@ -1,10 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Protected from "../components/Protected";
 
 type Conv = { id: string; contact_id: string; status: string; updated_at: string };
 type ContactMap = Record<string, { name: string | null }>;
+type Attachment = {
+  url: string | null;
+  mime_type: string | null;
+  file_name: string | null;
+};
 type Msg = {
   id: string;
   direction: "in" | "out";
@@ -13,6 +17,7 @@ type Msg = {
   status: string | null;
   sent_at: string | null;
   received_at: string | null;
+  attachment?: Attachment; // <-- single attachment from API
 };
 
 export default function InboxPage() {
@@ -35,12 +40,17 @@ export default function InboxPage() {
   // Payment link helper
   const [amount, setAmount] = useState<number>(49900); // paise
 
+  // Smart template bodies
+  const tmplGreeting = `Hello! 👋 This is the bank support team. How can we help you today?`;
+  const tmplAskDLOrPassport = `For verification, please share a clear photo of your *Driving License* (both sides, if applicable) or *Passport*. Ensure all details are visible.`;
+
+
   // ---- Smart autoscroll state/refs ----
   const threadRef = useRef<HTMLDivElement | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
-  const autoScrollRef = useRef(true);          // true when user is near bottom
+  const autoScrollRef = useRef(true); // true when user is near bottom
   const lastMsgIdRef = useRef<string | null>(null);
-  const pendingNewRef = useRef(false);         // set when a new bottom message arrives
+  const pendingNewRef = useRef(false); // set when a new bottom message arrives
   const [showJump, setShowJump] = useState(false);
 
   const filteredConvs = useMemo(() => {
@@ -206,6 +216,16 @@ export default function InboxPage() {
     }
   }
 
+  async function requestIdProof() {
+    if (!selected) return;
+    await fetch("/api/inbox/request-id", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversation_id: selected.id, to: selected.contact_id }),
+    });
+    loadMsgs(selected.id);
+  }
+
   // --- polling ---
   useEffect(() => {
     loadConvs();
@@ -223,228 +243,241 @@ export default function InboxPage() {
   }, [selected]);
 
   return (
-    <Protected>
-      <div style={{ padding: 16 }}>
-    <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 16, height: "calc(100vh - 40px)" }}>
-      {/* Left: Conversations */}
-      <aside style={{ borderRight: "1px solid #eee", overflow: "auto", paddingRight: 8 }}>
-        <div style={{ position: "sticky", top: 0, background: "#fff", padding: "8px 0" }}>
-          <h2 style={{ margin: 0 }}>Conversations</h2>
-          <input
-            placeholder="Search name/number…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid #ddd", marginTop: 8 }}
-          />
-        </div>
+    <div style={{ padding: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 16, height: "calc(100vh - 40px)" }}>
+        {/* Left: Conversations */}
+        <aside style={{ borderRight: "1px solid #eee", overflow: "auto", paddingRight: 8 }}>
+          <div style={{ position: "sticky", top: 0, background: "#fff", padding: "8px 0" }}>
+            <h2 style={{ margin: 0 }}>Conversations</h2>
+            <input
+              placeholder="Search name/number…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid #ddd", marginTop: 8 }}
+            />
+          </div>
 
-        {filteredConvs.length === 0 && <div style={{ color: "#666", marginTop: 10 }}>No conversations.</div>}
-        {filteredConvs.map((c) => (
-          <div
-            key={c.id}
-            onClick={() => setSelected(c)}
-            style={{
-              padding: 10,
-              cursor: "pointer",
-              borderRadius: 8,
-              marginBottom: 6,
-              background: selected?.id === c.id ? "#f5f5f5" : "transparent",
-            }}
-          >
-            <div style={{ fontWeight: 600, fontSize: 14 }}>
-              {contacts[c.contact_id]?.name || c.contact_id}
-            </div>
+          {filteredConvs.length === 0 && <div style={{ color: "#666", marginTop: 10 }}>No conversations.</div>}
+          {filteredConvs.map((c) => (
             <div
+              key={c.id}
+              onClick={() => setSelected(c)}
               style={{
-                fontSize: 12,
-                color: c.status === "paid" ? "#0a7d00" : "#666",
-                display: "flex",
-                gap: 6,
-                alignItems: "center",
+                padding: 10,
+                cursor: "pointer",
+                borderRadius: 8,
+                marginBottom: 6,
+                background: selected?.id === c.id ? "#f5f5f5" : "transparent",
               }}
             >
-              <span
-                style={{
-                  border: "1px solid #eee",
-                  borderRadius: 10,
-                  padding: "0 8px",
-                  background: c.status === "paid" ? "#eaffea" : "transparent",
-                }}
-              >
-                {c.status}
-              </span>
-              <span>{new Date(c.updated_at).toLocaleString()}</span>
-            </div>
-          </div>
-        ))}
-      </aside>
-
-      {/* Right: Thread */}
-      <section style={{ display: "grid", gridTemplateRows: "auto 1fr auto auto", gap: 10 }}>
-        {/* Header */}
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <h2 style={{ margin: 0 }}>{selectedName || "Select a conversation"}</h2>
-          {selected && (
-            <>
-              <span
+              <div style={{ fontWeight: 600, fontSize: 14 }}>
+                {contacts[c.contact_id]?.name || c.contact_id}
+              </div>
+              <div
                 style={{
                   fontSize: 12,
-                  color: selected.status === "paid" ? "#0a7d00" : "#666",
-                  border: "1px solid #eee",
-                  borderRadius: 12,
-                  padding: "2px 8px",
-                  background: selected.status === "paid" ? "#eaffea" : "transparent",
+                  color: c.status === "paid" ? "#0a7d00" : "#666",
+                  display: "flex",
+                  gap: 6,
+                  alignItems: "center",
                 }}
               >
-                {selected.status}
-              </span>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
-                <input
-                  type="number"
-                  min={100}
-                  value={amount}
-                  onChange={(e) => setAmount(parseInt(e.target.value || "0"))}
-                  style={{ width: 120, padding: "6px 8px", borderRadius: 8, border: "1px solid #ddd" }}
-                  title="Amount (in paise): 49900 = ₹499"
-                />
-                <button
-                  onClick={createAndSendLink}
-                  style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #ddd" }}
-                  disabled={!selected}
-                  title="Create and send a payment link"
+                <span
+                  style={{
+                    border: "1px solid #eee",
+                    borderRadius: 10,
+                    padding: "0 8px",
+                    background: c.status === "paid" ? "#eaffea" : "transparent",
+                  }}
                 >
-                  Send Payment Link
-                </button>
+                  {c.status}
+                </span>
+                <span>{new Date(c.updated_at).toLocaleString()}</span>
               </div>
-            </>
-          )}
-        </div>
+            </div>
+          ))}
+        </aside>
 
-        {/* Messages */}
-        <div
-          ref={threadRef}
-          onScroll={handleThreadScroll}
-          style={{ position: "relative", overflow: "auto", border: "1px solid #eee", borderRadius: 10, padding: 12, background: "#fff" }}
-        >
-          {selected ? (
-            msgs.length ? (
-              msgs.map((m) => (
-                <div
-                  key={m.id}
-                  style={{ display: "flex", justifyContent: m.direction === "out" ? "flex-end" : "flex-start", marginBottom: 8 }}
+        {/* Right: Thread */}
+        <section style={{ display: "grid", gridTemplateRows: "auto 1fr auto auto", gap: 10 }}>
+          {/* Header */}
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <h2 style={{ margin: 0 }}>{selectedName || "Select a conversation"}</h2>
+            {selected && (
+              <>
+                <span
+                  style={{
+                    fontSize: 12,
+                    color: selected.status === "paid" ? "#0a7d00" : "#666",
+                    border: "1px solid #eee",
+                    borderRadius: 12,
+                    padding: "2px 8px",
+                    background: selected.status === "paid" ? "#eaffea" : "transparent",
+                  }}
                 >
-                  <div
-                    style={{
-                      maxWidth: 520,
-                      padding: "8px 12px",
-                      borderRadius: 12,
-                      background: m.direction === "out" ? "#DCF8C6" : "#fff",
-                      border: "1px solid #eee",
-                    }}
-                  >
-                    <div style={{ whiteSpace: "pre-wrap" }}>{m.text || <i>{m.type}</i>}</div>
-                    <div style={{ fontSize: 10, color: "#888", marginTop: 4 }}>
-                      {m.direction === "out"
-                        ? (m.status || "sent")
-                        : (m.received_at ? new Date(m.received_at).toLocaleTimeString() : "")}
-                    </div>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div style={{ color: "#666" }}>No messages yet in this thread.</div>
-            )
-          ) : (
-            <div style={{ color: "#666" }}>Choose a conversation to view messages.</div>
-          )}
-          <div ref={chatEndRef} />
-          {/* Jump to bottom button */}
-          {showJump && (
-            <button
-              onClick={() => {
-                autoScrollRef.current = true;
-                scrollToBottom(true);
-              }}
-              style={{
-                position: "sticky",
-                left: 0,
-                right: 0,
-                bottom: 0,
-                margin: "8px auto 0",
-                display: "block",
-                padding: "6px 10px",
-                borderRadius: 999,
-                border: "1px solid #ddd",
-                background: "#f8f8f8",
-              }}
-            >
-              Jump to bottom ↓
-            </button>
-          )}
-        </div>
+                  {selected.status}
+                </span>
+              </>
+            )}
+          </div>
 
-        {/* Reply box */}
-        <div style={{ display: "flex", gap: 8 }}>
-          <input
-            placeholder="Type a reply…"
-            value={reply}
-            onChange={(e) => setReply(e.target.value)}
-            style={{ flex: 1, padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd" }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && reply.trim()) sendReply();
-            }}
-            disabled={!selected}
-          />
-          <button
-            onClick={sendReply}
-            disabled={!selected || !reply.trim() || sending}
-            style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #ddd" }}
-            title="Sends a session message (requires the 24h window to be open)"
+          {/* Messages */}
+          <div
+            ref={threadRef}
+            onScroll={handleThreadScroll}
+            style={{ position: "relative", overflow: "auto", border: "1px solid #eee", borderRadius: 10, padding: 12, background: "#fff" }}
           >
-            {sending ? "Sending…" : "Send"}
-          </button>
-        </div>
+            {selected ? (
+              msgs.length ? (
+                msgs.map((m) => {
+                  const a = m.attachment;
+                  const isImg = a?.mime_type?.startsWith("image/");
+                  const name = a?.file_name || "attachment";
+                  return (
+                    <div
+                      key={m.id}
+                      style={{ display: "flex", justifyContent: m.direction === "out" ? "flex-end" : "flex-start", marginBottom: 8 }}
+                    >
+                      <div
+                        style={{
+                          maxWidth: 520,
+                          padding: "8px 12px",
+                          borderRadius: 12,
+                          background: m.direction === "out" ? "#DCF8C6" : "#fff",
+                          border: "1px solid #eee",
+                        }}
+                      >
+                        {/* Text (if any) */}
+                        {m.text ? (
+                          <div style={{ whiteSpace: "pre-wrap" }}>{m.text}</div>
+                        ) : m.type ? (
+                          <div style={{ whiteSpace: "pre-wrap", color: "#666" }}><i>{m.type}</i></div>
+                        ) : null}
 
-        {/* Quick Replies */}
-        <div style={{ borderTop: "1px solid #eee", paddingTop: 8 }}>
-          <div style={{ fontWeight: 600, marginBottom: 6 }}>Quick Replies</div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-            {qrs.map((q) => (
+                        {/* Inline image (if present) */}
+                        {isImg && a?.url ? (
+                          <div style={{ marginTop: m.text ? 8 : 0 }}>
+                            <img
+                              src={a.url}
+                              alt={name}
+                              style={{ maxWidth: "100%", height: "auto", borderRadius: 8, display: "block" }}
+                            />
+                          </div>
+                        ) : null}
+
+                        {/* Download/Open chip for any file type (also works for images) */}
+                        {a?.url ? (
+                          <div style={{ marginTop: 8 }}>
+                            <a
+                              href={a.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              download={name}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 8,
+                                fontSize: 12,
+                                padding: "6px 10px",
+                                border: "1px solid #ddd",
+                                borderRadius: 999,
+                                background: "#f8f8f8",
+                              }}
+                              title="Download / Open"
+                            >
+                              <span style={{ fontWeight: 600 }}>Download</span>
+                              <span style={{ color: "#666" }}>{name}</span>
+                            </a>
+                          </div>
+                        ) : null}
+
+                        <div style={{ fontSize: 10, color: "#888", marginTop: 4 }}>
+                          {m.direction === "out"
+                            ? (m.status || "sent")
+                            : (m.received_at ? new Date(m.received_at).toLocaleTimeString() : "")}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div style={{ color: "#666" }}>No messages yet in this thread.</div>
+              )
+            ) : (
+              <div style={{ color: "#666" }}>Choose a conversation to view messages.</div>
+            )}
+            <div ref={chatEndRef} />
+            {/* Jump to bottom button */}
+            {showJump && (
               <button
-                key={q.id}
-                onClick={() => sendQuick(q.body)}
+                onClick={() => {
+                  autoScrollRef.current = true;
+                  scrollToBottom(true);
+                }}
+                style={{
+                  position: "sticky",
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  margin: "8px auto 0",
+                  display: "block",
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  border: "1px solid #ddd",
+                  background: "#f8f8f8",
+                }}
+              >
+                Jump to bottom ↓
+              </button>
+            )}
+          </div>
+
+          {/* Reply box */}
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              placeholder="Type a reply…"
+              value={reply}
+              onChange={(e) => setReply(e.target.value)}
+              style={{ flex: 1, padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd" }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && reply.trim()) sendReply();
+              }}
+              disabled={!selected}
+            />
+            <button
+              onClick={sendReply}
+              disabled={!selected || !reply.trim() || sending}
+              style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #ddd" }}
+              title="Sends a session message (requires the 24h window to be open)"
+            >
+              {sending ? "Sending…" : "Send"}
+            </button>
+          </div>
+
+          {/* Smart Templates */}
+          <div style={{ borderTop: "1px solid #eee", paddingTop: 8, marginTop: 8 }}>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>Smart Templates</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+              <button
+                onClick={() => sendQuick(tmplGreeting)}
                 style={{ padding: "6px 10px", borderRadius: 12, border: "1px solid #ddd", background: "#f8f8f8" }}
                 disabled={!selected}
-                title={q.body}
+                title={tmplGreeting}
               >
-                {q.label}
+                👋 Greeting
               </button>
-            ))}
-            {!qrs.length && <div style={{ color: "#666" }}>Add your first quick reply below.</div>}
+              <button
+                onClick={() => sendQuick(tmplAskDLOrPassport)}
+                style={{ padding: "6px 10px", borderRadius: 12, border: "1px solid #ddd", background: "#f8f8f8" }}
+                disabled={!selected}
+                title={tmplAskDLOrPassport}
+              >
+                🪪 Ask ID Proof (Driving License / Passport)
+              </button>
+            </div>
           </div>
-
-          <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 2fr auto" }}>
-            <input
-              placeholder="Label (e.g., Fees)"
-              value={qrLabel}
-              onChange={(e) => setQrLabel(e.target.value)}
-              style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd" }}
-            />
-            <input
-              placeholder="Message body"
-              value={qrBody}
-              onChange={(e) => setQrBody(e.target.value)}
-              style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd" }}
-            />
-            <button onClick={addQR} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #ddd" }}>
-              Add
-            </button>
-          </div>
-        </div>
-      </section>
+        </section>
+      </div>
     </div>
-          </div>
-    </Protected>
-
   );
 }

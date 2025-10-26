@@ -1,5 +1,3 @@
-import type { Secrets } from "@/lib/runtimeConfig";
-
 export async function sendText({to, text }: {to: string; text: string }) {
   if (!process.env.WA_TOKEN || !process.env.WA_PHONE_ID) throw new Error("WhatsApp credentials not configured");
   const url = `https://graph.facebook.com/${process.env.GRAPH_VERSION}/${process.env.WA_PHONE_ID}/messages`;
